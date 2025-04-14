@@ -27,5 +27,5 @@ python reasoning_post_process.py
 python feature_extract.py
 ```
 
-
-
+#### Linear regression close-form solution
+python regression_close_form.py
