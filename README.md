@@ -8,7 +8,18 @@ For any questions please [email](mailto:wanyongfeng@umass.edu) or raise an issue
 
 ### Setup
 ```
-python3 -m venv mcq_diff_prediction_env
+python -m venv mcq_diff_prediction_env
 source mcq_diff_prediction_env/bin/activate
-python3 -m pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
+
+### Generate reasonings for each option
+```
+python reason_prompt_gen.py
+python reasoning_prompting.py
+python reasoning_post_process.py
+```
+
+### Linear regression baseline
+
+
