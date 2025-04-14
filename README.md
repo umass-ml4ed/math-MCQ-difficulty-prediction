@@ -22,4 +22,10 @@ python reasoning_post_process.py
 
 ### Linear regression baseline
 
+#### Extract features
+```
+python feature_extract.py
+```
+
+
 
