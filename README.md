@@ -31,3 +31,14 @@ python feature_extract.py
 ```
 python regression_close_form.py
 ```
+
+### Finetune with/without reasoning
+```
+python LLM_pred_difficulty.py
+```
+
+### Our method
+```
+python our_method.py
+```
+
