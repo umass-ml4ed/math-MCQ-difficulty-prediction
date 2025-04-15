@@ -5,7 +5,8 @@ In this repository, we present the code to our paper "Reasoning and Sampling-Aug
 For any questions please [email](mailto:wanyongfeng@umass.edu) or raise an issue.
 
 ## Dataset
-For MAPT dataset, we cannot share the data since it is a private dataset
+For MAPT dataset, we cannot share the data since it is a private dataset.
+
 For EEDI dataset, we manually parse the question text and options from the images and filter out questions that need images to answer the question. This is also a private dataset. You can [email](mailto:wmcnichols@umass.edu) for access
 
 ## Running
