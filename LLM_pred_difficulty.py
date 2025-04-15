@@ -4,7 +4,6 @@ torch.use_deterministic_algorithms(True)
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-# from transformers import AutoModel, AutoTokenizer
 from transformers import LongformerModel, LongformerTokenizer
 import argparse
 from utils import initialize_seeds, get_data_for_LLM, make_prompt, count_greater_pairs, calculate_r2, draw, seed_worker
@@ -23,7 +22,6 @@ class StandardDataset(Dataset):
         self.data = [
             {
                 "prompt": make_prompt(question),
-                # "label": question["difficulty"]
                 "label": question["GroundTruthDifficulty"],
                 "ID": question["ID"]
             }
@@ -37,7 +35,6 @@ class StandardDataset(Dataset):
         return self.data[index]
     
 class StandardCollator:
-    # def __init__(self, tokenizer: AutoTokenizer):
     def __init__(self, tokenizer: LongformerTokenizer):
         self.tokenizer = tokenizer
 
@@ -45,7 +42,6 @@ class StandardCollator:
         all_prompts = [sample["prompt"] for sample in batch]
         all_labels = [sample["label"] for sample in batch]
         all_ids = [sample["ID"] for sample in batch]
-        # prompts_tokenized = self.tokenizer(all_prompts, padding='longest', return_tensors='pt', max_length = 512, truncation = True).to(device)
         prompts_tokenized = self.tokenizer(all_prompts, padding='longest', return_tensors='pt', max_length = 4096, truncation = True).to(device)
         return {
             "input_ids": prompts_tokenized.input_ids,
@@ -66,14 +62,11 @@ def get_standard_dataloader(data, tokenizer, shuffle, args):
                       worker_init_fn=seed_worker,
                       generator=generator)
             
-class Bert_Model(nn.Module):
+class Longformer_Model(nn.Module):
     def __init__(self, model_name, hid_dim = 768):
         super().__init__()
-        # self.model = AutoModel.from_pretrained(model_name)
         self.model = LongformerModel.from_pretrained(model_name, max_position_embeddings=4098)
         print(f"number of parameters in {model_name}:", self.model.num_parameters())
-        # self.linear_1 = nn.Linear(hid_dim, hid_dim // 2)
-        # self.linear_2 = nn.Linear(hid_dim // 2, 1)
         self.linear = nn.Linear(hid_dim, 1)
         self.loss_fn = nn.MSELoss()
     
@@ -81,11 +74,7 @@ class Bert_Model(nn.Module):
         input_ids, attn_masks, labels, ids = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device), batch['ids'].to(device)
         print("input_id shape:", input_ids.shape)
         trans_out = self.model(input_ids = input_ids, attention_mask = attn_masks)
-        # trans_cls = trans_out['last_hidden_state'][:, 0, :]
         trans_cls = trans_out["pooler_output"]
-        # x = self.linear_1(trans_cls)
-        # x = F.leaky_relu(x)
-        # predictions = self.linear_2(x).squeeze(-1)
         predictions = self.linear(trans_cls).squeeze(-1)
         return self.loss_fn(predictions, labels), predictions, labels, ids
     
@@ -101,7 +90,6 @@ def train(train_dataloader, val_dataloader, model, args, save_name):
             loss, batch_predictions, batch_labels, _ = model(batch)
             total_train_loss += loss.item()
             loss.backward()
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), args.gc)
             optimizer.step()
             optimizer.zero_grad()
 
@@ -176,17 +164,11 @@ def main():
     args = parser.parse_args()
     
     if args.wandb:
-        # wandb.init(project="MAPT_results",
-        wandb.init(project="EEDI_results",
-                #    name = f"FT_{args.lr}_{args.epochs}_{args.fold}",
-                   name = f"without_reasoning_FT_{args.lr}_{args.epochs}_{args.fold}",
+        wandb.init(project="",
+                   name = f"",
                    config=args, 
-                   entity="ml4ed")
+                   entity="")
             
-    # with open("manual_math_feature_data_v4.json", "r") as f:
-    #     questions = json.load(f)
-    # with open("math_reasoning_data.json", "r") as f:
-    #     questions = json.load(f)
     with open("eedi_math_reasoning_data_with_selection_counts.json", "r") as f:
         questions = json.load(f)
     np.random.shuffle(questions)
@@ -199,24 +181,20 @@ def main():
     print("number of training data:", len(train_data))
     print("number of validation data:", len(val_data))
     print("number of test data:", len(test_data))
-    # tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+
     tokenizer = LongformerTokenizer.from_pretrained(args.model_name)
     train_dataloader = get_standard_dataloader(train_data, tokenizer, True, args)
     val_dataloader = get_standard_dataloader(val_data, tokenizer, False, args)
     test_dataloader = get_standard_dataloader(test_data, tokenizer, False, args)
-    # save_name = f"./ft_saved_models/{args.model_name.split('/')[1]}_{args.lr}_{args.epochs}_{args.fold}"
-    # save_name = f"./ft_saved_models/eedi_{args.model_name.split('/')[1]}_{args.lr}_{args.epochs}_{args.fold}"
     save_name = f"./ft_saved_models/without_reasoning_eedi_{args.model_name.split('/')[1]}_{args.lr}_{args.epochs}_{args.fold}"
 
     
     if args.test:
-        trained_model = Bert_Model(args.model_name).to(device)
+        trained_model = Longformer_Model(args.model_name).to(device)
         trained_model.load_state_dict(torch.load(save_name)) 
-        test(test_dataloader, trained_model)
-        # file_save_name = f"finetune"
-        # get_predictions(test_dataloader, gt_data, trained_model, file_save_name)         
+        test(test_dataloader, trained_model)      
     else:    
-        train(train_dataloader, val_dataloader, Bert_Model(args.model_name).to(device), args, save_name)
+        train(train_dataloader, val_dataloader, Longformer_Model(args.model_name).to(device), args, save_name)
         
 
 if __name__ == "__main__":

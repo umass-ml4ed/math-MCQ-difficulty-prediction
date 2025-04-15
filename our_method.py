@@ -4,7 +4,6 @@ torch.use_deterministic_algorithms(True)
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-# from transformers import AutoModel, AutoTokenizer
 from transformers import LongformerModel, LongformerTokenizer
 import argparse
 from utils import initialize_seeds, get_data_for_LLM, count_greater_pairs, calculate_r2, seed_worker, check_correlation
@@ -29,7 +28,6 @@ class StandardDataset(Dataset):
         return self.data[index]
     
 class StandardCollator:
-    # def __init__(self, tokenizer: AutoTokenizer):
     def __init__(self, tokenizer: LongformerTokenizer):
         self.tokenizer = tokenizer
 
@@ -49,24 +47,20 @@ class StandardCollator:
                 f"The question is: {sample['QuestionStem']}\n"
                 f"The potential way to reach the first wrong answer is: {sample['Student1Reasoning']}\n"
                 f"The first wrong answer is: {sample['Student1Answer']}")
-                # f"The first wrong answer is: {sample['Student1Answer']}")
             all_prompts.append(student1_answer_prompt)
         
             student2_answer_prompt = (
                 f"The question is: {sample['QuestionStem']}\n"
                 f"The potential way to reach the second wrong answer is: {sample['Student2Reasoning']}\n"
                 f"The second wrong answer is: {sample['Student2Answer']}")
-                # f"The second wrong answer is: {sample['Student1Answer']}")
             all_prompts.append(student2_answer_prompt)
             
             student3_answer_prompt = (
                 f"The question is: {sample['QuestionStem']}\n"
                 f"The potential way to reach the third wrong answer is: {sample['Student3Reasoning']}\n"
                 f"The third wrong answer is: {sample['Student3Answer']}")
-                # f"The third wrong answer is: {sample['Student1Answer']}")
             all_prompts.append(student3_answer_prompt)
                 
-        # prompts_tokenized = self.tokenizer(all_prompts, padding='longest', return_tensors='pt', max_length = 512, truncation = True).to(device)
         prompts_tokenized = self.tokenizer(all_prompts, padding='longest', return_tensors='pt', max_length = 4096, truncation = True).to(device)
 
         return {
@@ -75,7 +69,6 @@ class StandardCollator:
             "labels": torch.tensor(all_labels),
             "dis": torch.tensor(all_dis),
             "ids": torch.tensor(all_ids)}
-        # return (all_prompts, all_labels)
 
 def get_standard_dataloader(data, tokenizer, shuffle, args):
     dataset = StandardDataset(data)
@@ -90,12 +83,11 @@ def get_standard_dataloader(data, tokenizer, shuffle, args):
                       worker_init_fn=seed_worker,
                       generator=generator)
             
-class Bert_Model(nn.Module):
+class Longformer_model(nn.Module):
     def __init__(self, model_name, q_dim, s_dim, num_train_students, num_val_students, num_test_students, use_bilinear, CE_hyper):
         super().__init__()
         self.q_dim = q_dim
         self.s_dim = s_dim
-        # self.model = AutoModel.from_pretrained(model_name)
         self.model = LongformerModel.from_pretrained(model_name)
         self.use_bilinear = use_bilinear
         self.CE_hyper = CE_hyper
@@ -106,16 +98,10 @@ class Bert_Model(nn.Module):
             nn.init.xavier_normal_(self.bilinear)
         else:
             print("using MLP")
-            # self.linear5 = nn.Linear(s_dim, q_dim // 8)
-            # self.linear6 = nn.Linear(q_dim // 8, q_dim // 4)
-            # self.linear7 = nn.Linear(q_dim // 4, q_dim // 2)
-            # self.linear8 = nn.Linear(q_dim // 2, q_dim)
             self.bilinear_5 = nn.Parameter(torch.empty(self.s_dim, self.q_dim // 4))
             nn.init.xavier_normal_(self.bilinear_5)
             self.bilinear_6 = nn.Parameter(torch.empty(self.q_dim // 4, self.q_dim // 1))
             nn.init.xavier_normal_(self.bilinear_6)
-            # self.bilinear_7 = nn.Parameter(torch.empty(self.q_dim // 2, self.q_dim))
-            # nn.init.xavier_normal_(self.bilinear_7)
 
         self.linear_1 = nn.Linear(4, 16)
         self.linear_2 = nn.Linear(16, 8)
@@ -130,83 +116,30 @@ class Bert_Model(nn.Module):
         self.students = mvn.sample((num_train_students,)).to(device)
         print("students shape:", self.students.shape)
         
-        # # save students to a json file
-        # students_dict = self.students.tolist()
-        # with open("students_knowledge_level.json", "w") as f:
-        #     json.dump(students_dict, f, indent=4)
-
-        # import pdb; pdb.set_trace()
-        
-        # self.train_students = mvn.sample((num_train_students,)).to(device)
-        # print("train students shape:", self.train_students.shape)
-        # self.val_students = mvn.sample((num_val_students,)).to(device)
-        # print("val students shape:", self.val_students.shape)
-        # self.test_students = mvn.sample((num_test_students,)).to(device)
-        # print("test students shape:", self.test_students.shape)
-        
-        
-    def forward(self, batch, test = False, val = False):
-        # sentences = batch[0]
-        # for sentence in sentences:
-        #     print(sentence)
-        #     print('_' * 50)
-        # labels = batch[1]
-        # print("labels:", labels)
-        # import pdb; pdb.set_trace()
-        
+    def forward(self, batch, test = False, val = False):        
         input_ids, attn_masks, labels, dis, ids = batch['input_ids'].to(device), batch['attention_mask'].to(device), batch['labels'].to(device), batch['dis'].to(device), batch['ids'].to(device)
         print("input_ids shape:", input_ids.shape)
-        # print("attn_masks shape:", attn_masks.shape)
-        # print("labels shape:", labels.shape)
         trans_out = self.model(input_ids = input_ids, attention_mask = attn_masks)
-        # trans_cls = trans_out['last_hidden_state'][:, 0, :]
         trans_cls = trans_out["pooler_output"]
-        # print("trans_cls shape:", trans_cls.shape)
-        if test:
-            students = self.students
-            # students = self.test_students
-        elif val:
-            students = self.students
-            # students = self.val_students
-        else:
-            students = self.students
-            # students = self.train_students
+
+        students = self.students
 
         if self.use_bilinear:
             logits = students @ self.bilinear @ trans_cls.T
         else:
-            # x = self.linear5(students)
-            # x = F.leaky_relu(x)
-            # x = self.linear6(x)
-            # x = F.leaky_relu(x)
-            # x = self.linear7(x)
-            # x = F.leaky_relu(x)
-            # x = self.linear8(x)
-            # x = F.leaky_relu(x)
             x = students @ self.bilinear_5
             x = F.leaky_relu(x)
             x = x @ self.bilinear_6
             x = F.leaky_relu(x)
-            # x = x @ self.bilinear_7
-            # x = F.leaky_relu(x)
             logits = x @ trans_cls.T
         logits_shape = logits.shape
-        # print("logits shape:", logits.shape)
-        # print("logits values:", logits)
         logits = logits.view(-1, 4)
-        # print("logits shape after reshape:", logits.shape)
-        # print("logits values after reshape:", logits)
         
         logits = torch.softmax(logits, dim = 1)
-        # print("logits shape after softmax:", logits.shape)
-        # print("logits values after softmax:", logits)
         logits = logits.view(logits_shape)
-        # print("logits shape after reshape:", logits.shape)
-        # print("logits values after reshape:", logits)
         logits = torch.mean(logits, dim = 0)
-        # print("logits shape after mean:", logits.shape)
-        # print("logits values after mean:", logits)
         logits = logits.view(-1, 4)
+        
         x = self.linear_1(logits)
         x = F.tanh(x)
         x = self.linear_2(x)
@@ -223,9 +156,6 @@ class Bert_Model(nn.Module):
             log_logits = torch.log(logits)
             KL_loss = F.kl_div(log_logits, dis, reduction='batchmean')
             loss = self.loss_fn(predictions, labels) + self.CE_hyper * KL_loss
-        # print("predictions shape:", predictions.shape)
-        # print("labels shape:", labels.shape)
-        # calculate entropy of each logits
         entropy = -torch.sum(logits * torch.log(logits), dim = 1)
         return loss, predictions, labels, logits, entropy, ids
     
@@ -262,13 +192,8 @@ def train(train_dataloader, val_dataloader, model, args, save_name):
     else:
         optimizer = torch.optim.AdamW([
         {'params': model.model.parameters(), 'lr': args.LLM_lr},
-        # {'params': model.linear5.parameters(), 'lr': args.MLP_lr},
-        # {'params': model.linear6.parameters(), 'lr': args.MLP_lr},
-        # {'params': model.linear7.parameters(), 'lr': args.MLP_lr},
-        # {'params': model.linear8.parameters(), 'lr': args.MLP_lr},
         {'params': model.bilinear_5, 'lr': args.interaction_lr},
         {'params': model.bilinear_6, 'lr': args.interaction_lr},
-        # {'params': model.bilinear_7, 'lr': args.interaction_lr},
         {'params': model.linear_1.parameters(), 'lr': args.MLP_lr},
         {'params': model.linear_2.parameters(), 'lr': args.MLP_lr},
         {'params': model.linear_3.parameters(), 'lr': args.MLP_lr},
@@ -283,7 +208,6 @@ def train(train_dataloader, val_dataloader, model, args, save_name):
             loss, _, _, _, _,_ = model(batch, test = False, val = False)
             total_train_loss += loss.item()
             loss.backward()
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), args.gc)
             optimizer.step()
             optimizer.zero_grad()
 
@@ -337,9 +261,6 @@ def test(test_dataloader, model, save_name):
     print("R^2 score:", r2)
     check_correlation(predictions, labels, logits, entropys)
     
-    # # save predictions, labels amd logits into a csv file using pandas
-    # df = pd.DataFrame({"predictions": predictions, "labels": labels, "logits": logits, "entropys": entropys})
-    # df.to_csv(f"saved_results/{save_name}.csv", index=False) 
     with open("our_method.json", "w") as f:
         json.dump({"predictions": predictions, "labels": labels, "question_ids": question_ids}, f, indent=4)
     
@@ -382,20 +303,12 @@ def main():
 
     args = parser.parse_args()
     
-    # if args.wandb:
-    #     wandb.init(project="MAPT_cleaning_24",
-    #                name = f"entropy_{args.model_name.split('/')[1]}_{args.LLM_lr}_{args.MLP_lr}_{args.interaction_lr}_{args.epochs}_{args.fold}_num_train_student_{args.num_train_student}_num_val_student_{args.num_val_student}_s_dim_{args.s_dim}_use_bilinear_{args.use_bilinear}_CE_hyper_{args.CE_hyper}",
-    #                config=args, 
-    #                entity="ml4ed")
-    
     if args.wandb:
-        wandb.init(project="EEDI_results",
-                   name = f"entropy_{args.model_name.split('/')[1]}_{args.LLM_lr}_{args.MLP_lr}_{args.interaction_lr}_{args.epochs}_{args.fold}_num_train_student_{args.num_train_student}_num_val_student_{args.num_val_student}_s_dim_{args.s_dim}_use_bilinear_{args.use_bilinear}_CE_hyper_{args.CE_hyper}",
+        wandb.init(project="",
+                   name = "",
                    config=args, 
-                   entity="ml4ed")
+                   entity="")
             
-    # with open("math_reasoning_data_with_selection_counts.json", "r") as f:
-    #     data = json.load(f)
     with open("eedi_math_reasoning_data_with_selection_counts.json", "r") as f:
         data = json.load(f)
     np.random.shuffle(data)
@@ -403,10 +316,6 @@ def main():
     # split the data into 5 folds
     split_point = int((args.fold / 5) * len(data))
     data = data[split_point:] + data[:split_point]
-    
-    # difficutlies = [sample["GroundTruthDifficulty"] for sample in data]
-    # draw(difficutlies, "ground_truth_difficulty")
-    # import pdb; pdb.set_trace()
     
     train_data, val_data, test_data = get_data_for_LLM(data)
     print("train data length:", len(train_data))
@@ -419,29 +328,20 @@ def main():
     train_dataloader = get_standard_dataloader(train_data, tokenizer, True, args)
     val_dataloader = get_standard_dataloader(val_data, tokenizer, False, args)
     test_dataloader = get_standard_dataloader(test_data, tokenizer, False, args)
-    # save_name = f"./entropy_saved_models/new_idea_{args.model_name.split('/')[1]}_{args.LLM_lr}_{args.MLP_lr}_{args.interaction_lr}_{args.epochs}_{args.fold}_num_train_student_{args.num_train_student}_num_val_student_{args.num_val_student}_s_dim_{args.s_dim}_use_bilinear_{args.use_bilinear}_CE_hyper_{args.CE_hyper}"
     save_name = f"./entropy_saved_models/eedi_new_idea_{args.model_name.split('/')[1]}_{args.LLM_lr}_{args.MLP_lr}_{args.interaction_lr}_{args.epochs}_{args.fold}_num_train_student_{args.num_train_student}_num_val_student_{args.num_val_student}_s_dim_{args.s_dim}_use_bilinear_{args.use_bilinear}_CE_hyper_{args.CE_hyper}"
 
     print("save name:", save_name)
 
-    model = Bert_Model(args.model_name, args.q_dim, args.s_dim, args.num_train_student, args.num_val_student, args.num_test_student, args.use_bilinear, args.CE_hyper).to(device)
+    model = Longformer_model(args.model_name, args.q_dim, args.s_dim, args.num_train_student, args.num_val_student, args.num_test_student, args.use_bilinear, args.CE_hyper).to(device)
     
-    model.load_state_dict(torch.load(save_name))
-    students_prediction(test_dataloader, model)
+    # model.load_state_dict(torch.load(save_name))
+    # students_prediction(test_dataloader, model)
     
-    
-    
-    # if args.test:
-    #     # print(model.parameters)
-    #     # print(model.model.encoder.layer[-1].output.dense)
-    #     # print("before training roberta:", list(model.model.encoder.layer[-1].output.dense.parameters()))
-    #     # print("before training linear1:", list(model.linear_1.parameters()))
-    #     model.load_state_dict(torch.load(save_name))
-    #     # print("after training roberta:", list(model.model.encoder.layer[-1].output.dense.parameters()))
-    #     # print("after training linear1:", list(model.linear_1.parameters()))
-    #     test(test_dataloader, model, save_name.split('/')[-1])        
-    # else:    
-    #     train(train_dataloader, val_dataloader, model, args, save_name)
+    if args.test:
+        model.load_state_dict(torch.load(save_name))
+        test(test_dataloader, model, save_name.split('/')[-1])        
+    else:    
+        train(train_dataloader, val_dataloader, model, args, save_name)
         
 
 if __name__ == "__main__":
